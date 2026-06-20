@@ -27,9 +27,12 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - PORT=8000
+    volumes:
+      - ./backups:/app/backups
     depends_on:
       db:
         condition: service_healthy
+
 
   frontend:
     build: ./frontend

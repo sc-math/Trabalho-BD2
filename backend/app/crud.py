@@ -112,3 +112,25 @@ def create_pedido(db: Session, pedido_data: schemas.PedidoCreate):
 # --- OPERAÇÕES CRUD DE LOGS ---
 def get_logs_auditoria(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.LogAuditoria).order_by(models.LogAuditoria.data_evento.desc()).offset(skip).limit(limit).all()
+
+
+# --- OPERAÇÕES CRUD DE USUÁRIO ---
+import hashlib
+
+def get_usuarios(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Usuario).offset(skip).limit(limit).all()
+
+def create_usuario(db: Session, usuario: schemas.UsuarioCreate):
+    pwd_hash = hashlib.sha256(usuario.senha_raw.encode('utf-8')).hexdigest()
+    db_usuario = models.Usuario(
+        nome=usuario.nome,
+        email=usuario.email,
+        senha_hash=pwd_hash,
+        funcao=usuario.funcao,
+        ativo=usuario.ativo
+    )
+    db.add(db_usuario)
+    db.commit()
+    db.refresh(db_usuario)
+    return db_usuario
+
