@@ -115,13 +115,16 @@ def get_logs_auditoria(db: Session, skip: int = 0, limit: int = 100):
 
 
 # --- OPERAÇÕES CRUD DE USUÁRIO ---
-import hashlib
+from . import auth
 
 def get_usuarios(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Usuario).offset(skip).limit(limit).all()
 
+def get_usuario_by_email(db: Session, email: str):
+    return db.query(models.Usuario).filter(models.Usuario.email == email).first()
+
 def create_usuario(db: Session, usuario: schemas.UsuarioCreate):
-    pwd_hash = hashlib.sha256(usuario.senha_raw.encode('utf-8')).hexdigest()
+    pwd_hash = auth.hash_password(usuario.senha_raw)
     db_usuario = models.Usuario(
         nome=usuario.nome,
         email=usuario.email,

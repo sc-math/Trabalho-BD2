@@ -7,8 +7,7 @@ import os
 import subprocess
 import datetime
 from .database import get_db
-from . import schemas, crud
-
+from . import schemas, crud, auth, models
 app = FastAPI(
     title="E-Commerce Security API - Trabalho BD II",
     description="Backend dinâmico com suporte a simulação de Roles, Auditoria e Disaster Recovery.",
@@ -75,6 +74,29 @@ def db_status(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=403, detail=format_db_error(e))
 
+# --- LOGIN ---
+@app.post("/auth/login", response_model=schemas.Token)
+def login(dados: schemas.LoginRequest, db: Session = Depends(get_db)):
+    usuario = crud.get_usuario_by_email(db, dados.email)
+
+    if usuario is None or not auth.verify_password(dados.senha, usuario.senha_hash):
+        raise HTTPException(status_code=401, detail="E-mail ou senha incorretos.")
+
+    if not usuario.ativo:
+        raise HTTPException(status_code=403, detail="Usuário inativo. Acesso bloqueado.")
+
+    token = auth.create_access_token({
+        "sub": str(usuario.id),
+        "email": usuario.email,
+        "funcao": usuario.funcao,
+    })
+
+    return schemas.Token(access_token=token, funcao=usuario.funcao, nome=usuario.nome)
+
+@app.get("/auth/me")
+def get_me(usuario_atual: models.Usuario = Depends(auth.get_current_user)):
+    return {"id": usuario_atual.id, "email": usuario_atual.email, "funcao": usuario_atual.funcao}
+
 # --- CRUD DE PRODUTOS ---
 @app.get("/produtos", response_model=List[schemas.ProdutoResponse])
 def read_produtos(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
@@ -101,7 +123,10 @@ def update_produto(produto_id: int, produto: schemas.ProdutoUpdate, db: Session 
         raise HTTPException(status_code=403, detail=format_db_error(e))
 
 @app.delete("/produtos/{produto_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_produto(produto_id: int, db: Session = Depends(get_db)):
+def delete_produto(produto_id: int,
+                   db: Session = Depends(get_db),
+                   usuario_atual: models.Usuario = Depends(auth.require_role("administrador")),
+):
     try:
         db_produto = crud.delete_produto(db, produto_id=produto_id)
         if db_produto is None:
