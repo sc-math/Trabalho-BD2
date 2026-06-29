@@ -71,6 +71,10 @@ services:
       - "3001:3000"
     environment:
       - WDS_SOCKET_PORT=0
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - ./loja-virtual/src:/app/src
+      - ./loja-virtual/public:/app/public
     depends_on:
       - backend
     stdin_open: true
