@@ -28,13 +28,14 @@ docker-compose stop
 
 ## Portas
 
-| Serviço | URL/Host |
-| --- | --- |
-| Frontend React | http://localhost:3000 |
-| Backend FastAPI | http://localhost:8000 |
-| Documentação da API | http://localhost:8000/docs |
-| PostgreSQL | localhost:5432 |
-| pgAdmin Web | http://localhost:5050 |
+| Serviço                       | URL/Host                   |
+|-------------------------------|----------------------------|
+| Frontend Loja (React)         | http://localhost:3001      |
+| Frontend Admin (React)        | http://localhost:3000      |
+| Backend API (FastAPI)         | http://localhost:8000      |
+| Documentação da API           | http://localhost:8000/docs |
+| Banco de Dados (PostgreSQL)   | localhost:5432             |
+| Interface Banco (pgAdmin Web) | http://localhost:5050      | 
 
 ## Conexão com o PostgreSQL
 
