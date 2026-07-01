@@ -49,6 +49,7 @@ function App() {
 
   // Autenticação de Usuário Simulada (Interface do Usuário)
   const [authUser, setAuthUser] = useState(null); // { nome, email, funcao }
+  const [authToken, setAuthToken] = useState(null); // JWT retornado pelo /auth/login
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
@@ -71,13 +72,16 @@ function App() {
   const authenticatedFetch = useCallback(async (path, options = {}) => {
     const url = `${backendUrl}${path}`;
     const method = options.method || 'GET';
-    
-    // Injetar o header de simulação de Role
+
     const headers = {
       ...options.headers,
       'Content-Type': 'application/json',
       'X-DB-Role': activeDbRole
     };
+
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
 
     logToConsole('query', `Enviando requisição ${method} para ${path}`, { role: activeDbRole, headers });
 
@@ -96,7 +100,7 @@ function App() {
     } catch (err) {
       throw err;
     }
-  }, [backendUrl, activeDbRole, logToConsole]);
+  }, [backendUrl, activeDbRole, authToken, logToConsole]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -164,54 +168,44 @@ function App() {
   };
 
   // --- LOGIN DO USUÁRIO DE APLICAÇÃO ---
-  const handleAppLogin = (e) => {
+  const handleAppLogin = async (e) => {
     e.preventDefault();
     setActionError(null);
     setActionSuccess(null);
 
-    // Na semente (data.sql), temos as contas pré-cadastradas:
-    // admin@lojavirtual.com, suporte@lojavirtual.com, bruno@cliente.com, julia@cliente.com
-    const email = loginEmail.trim().toLowerCase();
-    
-    let simulatedUser = null;
-    let recommendedPostgresRole = 'loja_app';
+    try {
+      const response = await fetch(`${backendUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, senha: loginPassword })
+      });
+      const data = await response.json();
 
-    if (email === 'admin@lojavirtual.com') {
-      simulatedUser = { nome: 'Carlos Administrador', email, funcao: 'administrador' };
-      recommendedPostgresRole = 'postgres';
-    } else if (email === 'suporte@lojavirtual.com') {
-      simulatedUser = { nome: 'Ana Suporte', email, funcao: 'suporte' };
-      recommendedPostgresRole = 'funcionario_user';
-    } else if (email === 'bruno@cliente.com') {
-      simulatedUser = { nome: 'Bruno Cliente', email, funcao: 'cliente' };
-      recommendedPostgresRole = 'visitante_user';
-    } else if (email === 'julia@cliente.com') {
-      simulatedUser = { nome: 'Julia Costa', email, funcao: 'cliente' };
-      recommendedPostgresRole = 'visitante_user';
-    } else {
-      // Tenta buscar nos usuários cadastrados dinamicamente se houver
-      const found = systemUsers.find(u => u.email.toLowerCase() === email);
-      if (found) {
-        simulatedUser = { nome: found.nome, email, funcao: found.funcao };
-        recommendedPostgresRole = found.funcao === 'administrador' ? 'postgres' : 
-                                  found.funcao === 'suporte' ? 'funcionario_user' : 'visitante_user';
+      if (!response.ok) {
+        throw new Error(data.detail || 'Credenciais inválidas.');
       }
-    }
 
-    if (simulatedUser) {
-      setAuthUser(simulatedUser);
+      const recommendedPostgresRole =
+          data.funcao === 'administrador' ? 'postgres' :
+              data.funcao === 'suporte' ? 'funcionario_user' : 'visitante_user';
+
+      console.log('Token recebido:', data.access_token)
+
+      setAuthToken(data.access_token);
+      setAuthUser({ nome: data.nome, email: loginEmail, funcao: data.funcao });
       setActiveDbRole(recommendedPostgresRole);
-      setActionSuccess(`Usuário '${simulatedUser.nome}' autenticado com sucesso! Role de banco recomendada '${recommendedPostgresRole}' foi ativada.`);
-      logToConsole('success', `Login de Usuário da Aplicação realizado: ${simulatedUser.nome} (Função: ${simulatedUser.funcao}). Selecionada role de banco '${recommendedPostgresRole}'.`);
-    } else {
-      setActionError('Credenciais inválidas ou usuário não encontrado.');
-      logToConsole('error', `Falha ao autenticar usuário da aplicação: ${loginEmail}`);
+      setActionSuccess(`Usuário '${data.nome}' autenticado com sucesso! Role de banco recomendada '${recommendedPostgresRole}' foi ativada.`);
+      logToConsole('success', `Login JWT realizado: ${data.nome} (Função: ${data.funcao}). Role de banco '${recommendedPostgresRole}' selecionada.`);
+    } catch (err) {
+      setActionError(err.message);
+      logToConsole('error', `Falha ao autenticar: ${err.message}`);
     }
   };
 
   const handleAppLogout = () => {
     logToConsole('info', `Usuário ${authUser?.nome} deslogou da aplicação.`);
     setAuthUser(null);
+    setAuthToken(null);
     setActiveDbRole('loja_app');
     setLoginEmail('');
     setLoginPassword('');
@@ -290,21 +284,22 @@ function App() {
 
   // --- CADASTRO DE NOVOS USUÁRIOS (Tabela usuarios) ---
   const handleCreateUser = async (e) => {
-    e.preventDefault();
-    setActionError(null);
-    setActionSuccess(null);
-    try {
-      const data = await authenticatedFetch('/usuarios', {
-        method: 'POST',
-        body: JSON.stringify(newUser)
-      });
-      setActionSuccess(`Usuário da aplicação '${data.nome}' cadastrado com sucesso!`);
-      setNewUser({ nome: '', email: '', senha_raw: '', funcao: 'cliente', ativo: true });
-      fetchData();
-    } catch (err) {
-      setActionError(err.message);
-    }
-  };
+  e.preventDefault();
+  setActionError(null);
+  setActionSuccess(null);
+  try {
+    const endpoint = newUser.funcao === 'cliente' ? '/usuarios' : '/usuarios/staff';
+    const data = await authenticatedFetch(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(newUser)
+    });
+    setActionSuccess(`Usuário da aplicação '${data.nome}' cadastrado com sucesso!`);
+    setNewUser({ nome: '', email: '', senha_raw: '', funcao: 'cliente', ativo: true });
+    fetchData();
+  } catch (err) {
+    setActionError(err.message);
+  }
+};
 
   // --- GESTÃO DE BACKUP E RESTAURAÇÃO (DISASTER RECOVERY) ---
   const handleTriggerLogicalBackup = async () => {

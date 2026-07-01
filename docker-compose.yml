@@ -27,8 +27,11 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - PORT=8000
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES}
     volumes:
       - ./backups:/app/backups
+      - ./backend/app:/app/app
     depends_on:
       db:
         condition: service_healthy
@@ -42,6 +45,7 @@ services:
       - "3000:3000"
     environment:
       - WDS_SOCKET_PORT=0
+      - CHOKIDAR_USEPOLLING=true
     depends_on:
       - backend
     stdin_open: true
@@ -59,6 +63,23 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  loja-virtual:
+    build: ./loja-virtual
+    container_name: loja_virtual_app
+    restart: always
+    ports:
+      - "3001:3000"
+    environment:
+      - WDS_SOCKET_PORT=0
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - ./loja-virtual/src:/app/src
+      - ./loja-virtual/public:/app/public
+    depends_on:
+      - backend
+    stdin_open: true
+    tty: true
 
 volumes:
   postgres_data:

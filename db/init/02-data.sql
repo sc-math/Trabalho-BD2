@@ -25,11 +25,11 @@ INSERT INTO produtos (categoria_id, nome, descricao, preco, estoque) VALUES
 -- 3. INSERINDO USUÁRIOS
 -- Senhas fictícias com hash bcrypt simulado (exemplo: 'senha123')
 INSERT INTO usuarios (nome, email, senha_hash, funcao, ativo) VALUES
-('Carlos Administrador', 'admin@lojavirtual.com', '$2b$12$Kj64YkQZpP/Y2n0l3N2YkO1RmWdD3p1ZtZ9B2P4cWqRz5S8t2vXPy', 'administrador', true),
-('Ana Suporte', 'suporte@lojavirtual.com', '$2b$12$R.9M3r9E3e9G3g9U3u9E3e9G3g9U3u9E3e9G3g9U3u9E3e9G3g9U3', 'suporte', true),
-('Bruno Cliente', 'bruno@cliente.com', '$2b$12$B.1L2i3M4e5T6a7C8o9N0o1P2q3R4s5T6u7V8w9X0y1Z2a3b4c5d6', 'cliente', true),
-('Julia Costa', 'julia@cliente.com', '$2b$12$J.uLiaCoSta1234567890abcdefghijklmnopqrstuvwxyz123456', 'cliente', true),
-('Marcos Souza', 'marcos@cliente.com', '$2b$12$M.arcosSouza1234567890abcdefghijklmnopqrstuvwxyz12345', 'cliente', false); -- Usuário inativo para testes de segurança
+('Carlos Administrador', 'admin@lojavirtual.com', '$2b$12$uMMNyQRSOytcsCeBpX0uQeM9GRLXSjQHOsA2qEzI266drvYy3xtWS', 'administrador', true),
+('Ana Suporte', 'suporte@lojavirtual.com', '$2b$12$g25/Oobq3lM0Kq6yTZP2eu29apevF7vgR52dW4biTzdUVCsPrhA0S', 'suporte', true),
+('Bruno Cliente', 'bruno@cliente.com', '$2b$12$Nk5Lp3mUSJElIUDgORwpWesgj.6iZMuRdoMGLmPPg7xVLAiG9pKUW', 'cliente', true),
+('Julia Costa', 'julia@cliente.com', '$2b$12$sj2AAqn20CiynyhShwUxOeEUEEaTeie5W4Y3MMc/oPmmPTC6.6wB6', 'cliente', true),
+('Marcos Souza', 'marcos@cliente.com', '$2b$12$Fo4EhHd3nRHbDKo5k0lBteFNvnf6wPS0cZzvZC48gPs3Rwi.kXfyC', 'cliente', false); -- Usuário inativo para testes de segurança
 
 -- 4. INSERINDO PEDIDOS
 INSERT INTO pedidos (usuario_id, status, total) VALUES
