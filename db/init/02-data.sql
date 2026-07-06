@@ -23,13 +23,13 @@ INSERT INTO produtos (categoria_id, nome, descricao, preco, estoque) VALUES
 (5, 'Bola de Futebol de Campo', 'Bola oficial de futebol de campo costurada à mão.', 99.90, 60);
 
 -- 3. INSERINDO USUÁRIOS
--- Senhas fictícias com hash bcrypt simulado (exemplo: 'senha123')
+-- Senhas: todos os usuários usam 'senha123' (hash bcrypt gerado pelo módulo auth.py da aplicação)
 INSERT INTO usuarios (nome, email, senha_hash, funcao, ativo) VALUES
-('Carlos Administrador', 'admin@lojavirtual.com', '$2b$12$uMMNyQRSOytcsCeBpX0uQeM9GRLXSjQHOsA2qEzI266drvYy3xtWS', 'administrador', true),
-('Ana Suporte', 'suporte@lojavirtual.com', '$2b$12$g25/Oobq3lM0Kq6yTZP2eu29apevF7vgR52dW4biTzdUVCsPrhA0S', 'suporte', true),
-('Bruno Cliente', 'bruno@cliente.com', '$2b$12$Nk5Lp3mUSJElIUDgORwpWesgj.6iZMuRdoMGLmPPg7xVLAiG9pKUW', 'cliente', true),
-('Julia Costa', 'julia@cliente.com', '$2b$12$sj2AAqn20CiynyhShwUxOeEUEEaTeie5W4Y3MMc/oPmmPTC6.6wB6', 'cliente', true),
-('Marcos Souza', 'marcos@cliente.com', '$2b$12$Fo4EhHd3nRHbDKo5k0lBteFNvnf6wPS0cZzvZC48gPs3Rwi.kXfyC', 'cliente', false); -- Usuário inativo para testes de segurança
+('Carlos Administrador', 'admin@lojavirtual.com', '$2b$12$imHHyylE1FSaAxuOR8fTmeoYAN9lmKxBsXhN2C9aO6fqHWS6gpHKm', 'administrador', true),
+('Ana Suporte', 'suporte@lojavirtual.com', '$2b$12$/Tl2oADsA2pW0JO3iSq0butmaycfHg6RFhVNgU1T4HSWy9FVeduba', 'suporte', true),
+('Bruno Cliente', 'bruno@cliente.com', '$2b$12$5tTca3j1WoajL7E.G9H6K.2vu7XNLQ1u6c3KcdLVKRVT/vEqO06Am', 'cliente', true),
+('Julia Costa', 'julia@cliente.com', '$2b$12$OOvf.yutE9wDWuJMYS2Nfe.apTT3.nJMXLf8J1OGxeGAvz6wpHahK', 'cliente', true),
+('Marcos Souza', 'marcos@cliente.com', '$2b$12$a4WEIiYpfNYDyVtKmU4Re.RaAEJ7LDojQh03Nm6KKWB7BXh3Fulbe', 'cliente', false); -- Usuário inativo para testes de segurança
 
 -- 4. INSERINDO PEDIDOS
 INSERT INTO pedidos (usuario_id, status, total) VALUES

@@ -32,6 +32,7 @@ services:
     volumes:
       - ./backups:/app/backups
       - ./backend/app:/app/app
+      - ./db/init:/app/db/init
     depends_on:
       db:
         condition: service_healthy

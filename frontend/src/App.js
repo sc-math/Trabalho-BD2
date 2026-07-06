@@ -144,10 +144,18 @@ function App() {
       setLogs(logsData);
 
       // Backups do cluster (Apenas superusuário/postgres tem acesso a arquivos do host)
-      const backupsData = await authenticatedFetch('/backups').catch(err => {
-        logToConsole('warning', 'Acesso negado para listar arquivos de backup no diretório host.');
-        return [];
-      });
+      let backupsData = [];
+      try {
+        backupsData = await authenticatedFetch('/backups');
+      } catch (err) {
+        logToConsole('warning', 'Acesso negado ou banco offline para listar backups tradicionais. Buscando rota de emergência...');
+        try {
+          const emergencyResponse = await fetch(`${backendUrl}/backups/emergency/list`);
+          backupsData = await emergencyResponse.json();
+        } catch (e) {
+          logToConsole('error', 'Falha ao buscar backups da rota de emergência.');
+        }
+      }
       setBackups(backupsData);
 
     } catch (err) {
@@ -361,6 +369,48 @@ function App() {
     }
   };
 
+  const handleEmergencyReset = async () => {
+    if (!window.confirm('Tem certeza que deseja recriar o banco de dados do zero? Isso apagará todas as informações atuais e redefinirá os usuários de teste (admin@lojavirtual.com com senha123).')) return;
+    setActionError(null);
+    setActionSuccess(null);
+    setRefreshing(true);
+    try {
+      const response = await fetch(`${backendUrl}/backups/emergency/reset`, { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Erro na inicialização de emergência');
+      setActionSuccess(data.mensagem);
+      logToConsole('success', 'Recuperação de Emergência: Banco inicializado do zero!');
+      fetchData();
+    } catch (err) {
+      setActionError(err.message);
+      logToConsole('error', `Falha na inicialização de emergência: ${err.message}`);
+      setRefreshing(false);
+    }
+  };
+
+  const handleEmergencyRestore = async () => {
+    if (!selectedBackup) {
+      setActionError('Selecione um arquivo de backup para restaurar.');
+      return;
+    }
+    if (!window.confirm(`ATENÇÃO: Deseja restaurar o backup '${selectedBackup}' no modo de emergência? Isso reescreverá a base de dados!`)) return;
+    setActionError(null);
+    setActionSuccess(null);
+    setRefreshing(true);
+    try {
+      const response = await fetch(`${backendUrl}/backups/emergency/restore?filename=${selectedBackup}`, { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Erro na restauração de emergência');
+      setActionSuccess(data.mensagem);
+      logToConsole('success', `Recuperação de Emergência: Backup '${selectedBackup}' restaurado!`);
+      fetchData();
+    } catch (err) {
+      setActionError(err.message);
+      logToConsole('error', `Falha na restauração de emergência: ${err.message}`);
+      setRefreshing(false);
+    }
+  };
+
   // Renderização e formatação de dados
   const getLogLevelClass = (event) => {
     if (!event) return 'level-info';
@@ -498,78 +548,152 @@ function App() {
         {/* Bloco Superior: Controles de Segurança (RBAC / Login) */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem' }}>
           
-          {/* Painel de Login da Aplicação */}
-          <div className="panel">
-            <div className="panel-header" style={{ marginBottom: '1rem' }}>
-              <div className="panel-title">
-                <Lock size={18} />
-                <h2>Autenticação da Aplicação</h2>
+          {/* Painel de Login da Aplicação ou Painel de Recuperação de Emergência */}
+          {!dbStatus ? (
+            <div className="panel" style={{ borderLeft: '4px solid var(--color-rose)', background: 'rgba(244, 63, 94, 0.03)' }}>
+              <div className="panel-header" style={{ marginBottom: '1rem' }}>
+                <div className="panel-title" style={{ color: 'var(--color-rose)' }}>
+                  <ShieldAlert size={18} />
+                  <h2>Recuperação de Desastre (Offline)</h2>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  O banco de dados <strong>lojavirtual</strong> está offline ou não existe. Use as ferramentas de emergência abaixo para reestabelecê-lo.
+                </p>
+                
+                <button 
+                  onClick={handleEmergencyReset} 
+                  className="refresh-button" 
+                  style={{ 
+                    justifyContent: 'center', 
+                    padding: '0.6rem', 
+                    background: 'var(--color-rose-glow)', 
+                    border: '1px solid var(--color-rose)', 
+                    color: 'var(--color-rose)', 
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                  disabled={refreshing}
+                >
+                  <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} style={{ marginRight: '0.4rem' }} />
+                  Inicializar Banco do Zero (admin@lojavirtual.com / senha123)
+                </button>
+
+                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', marginTop: '0.25rem' }}>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.4rem' }}>
+                    Ou Restaurar de um Backup Existente:
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <select 
+                      value={selectedBackup}
+                      onChange={(e) => setSelectedBackup(e.target.value)}
+                      style={{ 
+                        flex: 1, 
+                        padding: '0.5rem', 
+                        borderRadius: '6px', 
+                        background: 'rgba(15,23,42,0.9)', 
+                        border: '1px solid var(--border-color)', 
+                        color: '#fff', 
+                        fontSize: '0.8rem' 
+                      }}
+                    >
+                      <option value="">Nenhum backup selecionado</option>
+                      {backups.map(bk => (
+                        <option key={bk} value={bk}>{bk}</option>
+                      ))}
+                    </select>
+                    <button 
+                      onClick={handleEmergencyRestore} 
+                      className="refresh-button" 
+                      style={{ 
+                        padding: '0.4rem 0.8rem', 
+                        background: 'var(--color-indigo-glow)', 
+                        border: '1px solid var(--color-indigo)', 
+                        color: 'var(--color-indigo)',
+                        cursor: 'pointer'
+                      }}
+                      disabled={refreshing || !selectedBackup}
+                    >
+                      Restaurar
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
-            
-            {!authUser ? (
-              <form onSubmit={handleAppLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-                  Autentique-se como um usuário da tabela <code>usuarios</code> para habilitar operações de negócio.
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Email do Usuário</label>
-                  <input 
-                    type="email" 
-                    placeholder="admin@lojavirtual.com, suporte@lojavirtual.com..." 
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    style={{ padding: '0.5rem', borderRadius: '6px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', color: '#fff', fontSize: '0.9rem' }}
-                    required
-                  />
+          ) : (
+            <div className="panel">
+              <div className="panel-header" style={{ marginBottom: '1rem' }}>
+                <div className="panel-title">
+                  <Lock size={18} />
+                  <h2>Autenticação da Aplicação</h2>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Senha</label>
-                  <input 
-                    type="password" 
-                    placeholder="Sua senha..." 
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    style={{ padding: '0.5rem', borderRadius: '6px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', color: '#fff', fontSize: '0.9rem' }}
-                  />
-                </div>
-                <button type="submit" className="refresh-button" style={{ justifyContent: 'center', marginTop: '0.5rem' }}>
-                  Entrar no Sistema
-                </button>
-                
-                {/* Dicas de Contas de Teste */}
-                <div style={{ border: '1px dashed var(--border-color)', padding: '0.5rem', borderRadius: '6px', marginTop: '0.25rem', background: 'rgba(255,255,255,0.02)' }}>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem' }}>Contas Rápidas de Teste:</span>
-                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                    <button type="button" onClick={() => { setLoginEmail('admin@lojavirtual.com'); setLoginPassword('senha123'); }} style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem', background: 'rgba(99,102,241,0.1)', color: 'var(--color-indigo)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '4px', cursor: 'pointer' }}>Admin (Carlos)</button>
-                    <button type="button" onClick={() => { setLoginEmail('suporte@lojavirtual.com'); setLoginPassword('senha123'); }} style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem', background: 'rgba(16,185,129,0.1)', color: 'var(--color-emerald)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '4px', cursor: 'pointer' }}>Suporte (Ana)</button>
-                    <button type="button" onClick={() => { setLoginEmail('bruno@cliente.com'); setLoginPassword('senha123'); }} style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem', background: 'rgba(245,158,11,0.1)', color: 'var(--color-amber)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '4px', cursor: 'pointer' }}>Cliente (Bruno)</button>
-                  </div>
-                </div>
-              </form>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div style={{ background: 'rgba(16,185,129,0.05)', padding: '0.8rem', borderRadius: '8px', border: '1px solid rgba(16,185,129,0.2)', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                  <CheckCircle2 size={24} style={{ color: 'var(--color-emerald)' }} />
-                  <div>
-                    <span style={{ display: 'block', fontWeight: 600 }}>{authUser.nome}</span>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Logado como: {authUser.email}</span>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', borderLeft: '3px solid var(--color-indigo)', paddingLeft: '0.75rem' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-indigo)' }}>Permissões de Negócio Habilitadas:</span>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    {authUser.funcao === 'administrador' && '• Controle total de dados, manipulação de DDL, usuários e backups.'}
-                    {authUser.funcao === 'suporte' && '• Consultas operacionais, cadastro de produtos e processamento de vendas. Bloqueio de exclusões.'}
-                    {authUser.funcao === 'cliente' && '• Apenas consultas de produtos e navegação básica.'}
-                  </span>
-                </div>
-                <button onClick={handleAppLogout} className="refresh-button" style={{ border: '1px solid rgba(244,63,94,0.3)', color: 'var(--color-rose)', background: 'rgba(244,63,94,0.05)', justifyContent: 'center' }}>
-                  Fazer Logout (Encerrar Sessão)
-                </button>
               </div>
-            )}
-          </div>
+              
+              {!authUser ? (
+                <form onSubmit={handleAppLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                    Autentique-se como um usuário da tabela <code>usuarios</code> para habilitar operações de negócio.
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Email do Usuário</label>
+                    <input 
+                      type="email" 
+                      placeholder="admin@lojavirtual.com, suporte@lojavirtual.com..." 
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      style={{ padding: '0.5rem', borderRadius: '6px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', color: '#fff', fontSize: '0.9rem' }}
+                      required
+                    />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Senha</label>
+                    <input 
+                      type="password" 
+                      placeholder="Sua senha..." 
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      style={{ padding: '0.5rem', borderRadius: '6px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', color: '#fff', fontSize: '0.9rem' }}
+                    />
+                  </div>
+                  <button type="submit" className="refresh-button" style={{ justifyContent: 'center', marginTop: '0.5rem' }}>
+                    Entrar no Sistema
+                  </button>
+                  
+                  {/* Dicas de Contas de Teste */}
+                  <div style={{ border: '1px dashed var(--border-color)', padding: '0.5rem', borderRadius: '6px', marginTop: '0.25rem', background: 'rgba(255,255,255,0.02)' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem' }}>Contas Rápidas de Teste:</span>
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      <button type="button" onClick={() => { setLoginEmail('admin@lojavirtual.com'); setLoginPassword('senha123'); }} style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem', background: 'rgba(99,102,241,0.1)', color: 'var(--color-indigo)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '4px', cursor: 'pointer' }}>Admin (Carlos)</button>
+                      <button type="button" onClick={() => { setLoginEmail('suporte@lojavirtual.com'); setLoginPassword('senha123'); }} style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem', background: 'rgba(16,185,129,0.1)', color: 'var(--color-emerald)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '4px', cursor: 'pointer' }}>Suporte (Ana)</button>
+                      <button type="button" onClick={() => { setLoginEmail('bruno@cliente.com'); setLoginPassword('senha123'); }} style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem', background: 'rgba(245,158,11,0.1)', color: 'var(--color-amber)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '4px', cursor: 'pointer' }}>Cliente (Bruno)</button>
+                    </div>
+                  </div>
+                </form>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div style={{ background: 'rgba(16,185,129,0.05)', padding: '0.8rem', borderRadius: '8px', border: '1px solid rgba(16,185,129,0.2)', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                    <CheckCircle2 size={24} style={{ color: 'var(--color-emerald)' }} />
+                    <div>
+                      <span style={{ display: 'block', fontWeight: 600 }}>{authUser.nome}</span>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Logado como: {authUser.email}</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', borderLeft: '3px solid var(--color-indigo)', paddingLeft: '0.75rem' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-indigo)' }}>Permissões de Negócio Habilitadas:</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      {authUser.funcao === 'administrador' && '• Controle total de dados, manipulação de DDL, usuários e backups.'}
+                      {authUser.funcao === 'suporte' && '• Consultas operacionais, cadastro de produtos e processamento de vendas. Bloqueio de exclusões.'}
+                      {authUser.funcao === 'cliente' && '• Apenas consultas de produtos e navegação básica.'}
+                    </span>
+                  </div>
+                  <button onClick={handleAppLogout} className="refresh-button" style={{ border: '1px solid rgba(244,63,94,0.3)', color: 'var(--color-rose)', background: 'rgba(244,63,94,0.05)', justifyContent: 'center' }}>
+                    Fazer Logout (Encerrar Sessão)
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Painel Seletor de Roles do PostgreSQL (RBAC Console) */}
           <div className="panel" style={{ borderLeft: '4px solid var(--color-indigo)' }}>
@@ -816,12 +940,9 @@ function App() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 
                 {/* Ações Rápidas de Backup */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                  <button onClick={handleTriggerLogicalBackup} className="refresh-button" style={{ fontSize: '0.8rem', padding: '0.4rem', justifyContent: 'center' }}>
-                    Backup Lógico
-                  </button>
-                  <button onClick={handleTriggerCompleteBackup} className="refresh-button" style={{ fontSize: '0.8rem', padding: '0.4rem', justifyContent: 'center' }}>
-                    Backup Cluster
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button onClick={handleTriggerCompleteBackup} className="refresh-button" style={{ flex: 1, fontSize: '0.8rem', padding: '0.5rem', justifyContent: 'center', background: 'var(--color-indigo-glow)', border: '1px solid var(--color-indigo)', cursor: 'pointer' }}>
+                    Gerar Backup Completo (Total)
                   </button>
                 </div>
 

@@ -77,16 +77,16 @@ def trigger_complete_backup(
         db: Session = Depends(get_db),
         usuario_atual: models.Usuario = Depends(auth.require_role("administrador")),
 ):
-    """Gera um backup completo do cluster (.sql.gz) contendo as roles e usuários."""
+    """Gera um backup completo do cluster (.sql.gz) contendo as roles e usuários com limpeza (clean) no restore."""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"backup_cluster_{timestamp}.sql.gz"
+    filename = f"backup_total_{timestamp}.sql.gz"
     filepath = f"/app/backups/{filename}"
 
     os.makedirs("/app/backups", exist_ok=True)
 
     pg_pass = os.getenv("POSTGRES_PASSWORD", "postgres_super_secure_pass_987")
-    # sh -c é necessário para executar o pipe para gzip
-    cmd = f"pg_dumpall -h db -U postgres | gzip > {filepath}"
+    # Adicionamos -c para limpar (drop) objetos antes de criar, garantindo integridade no restore
+    cmd = f"pg_dumpall -c -h db -U postgres | gzip > {filepath}"
 
     env = os.environ.copy()
     env["PGPASSWORD"] = pg_pass
@@ -101,7 +101,7 @@ def trigger_complete_backup(
         )
         return {
             "status": "sucesso",
-            "mensagem": f"Backup completo do cluster '{filename}' gerado com sucesso!",
+            "mensagem": f"Backup total do cluster '{filename}' gerado com sucesso!",
             "arquivo": filename,
             "tamanho_bytes": os.path.getsize(filepath) if os.path.exists(filepath) else 0
         }
@@ -189,3 +189,104 @@ def trigger_drop_db():
                 "mensagem": "Banco de dados lojavirtual dropado com sucesso. Status de Desastre Simulado!"}
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Erro ao dropar banco: {e.stderr or e.stdout}")
+
+
+@router.get("/backups/emergency/list", response_model=List[str])
+def emergency_list_backups():
+    """Lista todos os arquivos de backup sem precisar de banco de dados ativo ou autenticação."""
+    backup_dir = "/app/backups"
+    if not os.path.exists(backup_dir):
+        return []
+    files = [f for f in os.listdir(backup_dir) if f.endswith(".dump") or f.endswith(".sql.gz")]
+    return sorted(files, reverse=True)
+
+
+@router.post("/backups/emergency/restore")
+def emergency_restore(
+        filename: str,
+        request: Request,
+):
+    """Restaura um backup mesmo com o banco offline/derrubado, sem get_db ou token JWT."""
+    filepath = f"/app/backups/{filename}"
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Arquivo de backup não encontrado.")
+
+    pg_pass = os.getenv("POSTGRES_PASSWORD", "postgres_super_secure_pass_987")
+    env = os.environ.copy()
+    env["PGPASSWORD"] = pg_pass
+
+    try:
+        # Fechar conexões ativas antes do drop/restauração
+        terminate_cmd = [
+            "psql", "-h", "db", "-U", "postgres", "-d", "postgres", "-c",
+            "SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = 'lojavirtual' AND pid <> pg_backend_pid();"
+        ]
+        subprocess.run(terminate_cmd, env=env, capture_output=True)
+
+        if filename.endswith(".dump"):
+            drop_cmd = ["psql", "-h", "db", "-U", "postgres", "-d", "postgres", "-c", "DROP DATABASE IF EXISTS lojavirtual;"]
+            create_cmd = ["psql", "-h", "db", "-U", "postgres", "-d", "postgres", "-c", "CREATE DATABASE lojavirtual;"]
+            subprocess.run(drop_cmd, env=env, check=True, capture_output=True)
+            subprocess.run(create_cmd, env=env, check=True, capture_output=True)
+
+            restore_cmd = [
+                "pg_restore", "-h", "db", "-U", "postgres", "-d", "lojavirtual", filepath
+            ]
+            subprocess.run(restore_cmd, env=env, check=True, capture_output=True)
+
+        elif filename.endswith(".sql.gz"):
+            restore_cmd = f"gunzip -c {filepath} | psql -h db -U postgres"
+            subprocess.run(restore_cmd, env=env, shell=True, check=True, capture_output=True)
+
+        else:
+            raise HTTPException(status_code=400, detail="Formato de arquivo inválido. Use .dump ou .sql.gz")
+
+        return {"status": "sucesso", "mensagem": f"Backup '{filename}' restaurado com sucesso em modo de emergência!"}
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"Erro de comando do Postgres: {e.stderr or e.stdout}")
+
+
+@router.post("/backups/emergency/reset")
+def emergency_reset(
+        request: Request,
+):
+    """Recria o banco de dados 'lojavirtual' e roda os scripts de inicialização (schema, dados e security)."""
+    pg_pass = os.getenv("POSTGRES_PASSWORD", "postgres_super_secure_pass_987")
+    env = os.environ.copy()
+    env["PGPASSWORD"] = pg_pass
+
+    try:
+        # Fechar conexões ativas
+        terminate_cmd = [
+            "psql", "-h", "db", "-U", "postgres", "-d", "postgres", "-c",
+            "SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = 'lojavirtual' AND pid <> pg_backend_pid();"
+        ]
+        subprocess.run(terminate_cmd, env=env, capture_output=True)
+
+        # Drop e Create
+        drop_cmd = ["psql", "-h", "db", "-U", "postgres", "-d", "postgres", "-c", "DROP DATABASE IF EXISTS lojavirtual;"]
+        subprocess.run(drop_cmd, env=env, check=True, capture_output=True)
+
+        create_cmd = ["psql", "-h", "db", "-U", "postgres", "-d", "postgres", "-c", "CREATE DATABASE lojavirtual;"]
+        subprocess.run(create_cmd, env=env, check=True, capture_output=True)
+
+        # Executar os scripts na ordem
+        init_files = [
+            "/app/db/init/01-schema.sql",
+            "/app/db/init/02-data.sql",
+            "/app/db/init/03-security.sql"
+        ]
+
+        for file_path in init_files:
+            if not os.path.exists(file_path):
+                raise HTTPException(status_code=500, detail=f"Script de inicialização não encontrado no container: {file_path}")
+            
+            cmd = ["psql", "-h", "db", "-U", "postgres", "-d", "lojavirtual", "-f", file_path]
+            res = subprocess.run(cmd, env=env, capture_output=True, text=True)
+            if res.returncode != 0:
+                raise HTTPException(status_code=500, detail=f"Erro ao executar {file_path}: {res.stderr or res.stdout}")
+
+        return {"status": "sucesso", "mensagem": "Banco de dados inicializado do zero com sucesso!"}
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao reconstruir banco: {e.stderr or e.stdout}")
+

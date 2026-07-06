@@ -8,23 +8,23 @@ NC='\033[0;0m'
 
 BACKUP_DIR="./backups"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-BACKUP_FILE="${BACKUP_DIR}/backup_cluster_${TIMESTAMP}.sql.gz"
+BACKUP_FILE="${BACKUP_DIR}/backup_total_${TIMESTAMP}.sql.gz"
 CONTAINER_NAME="db_loja"
 DB_USER="postgres"
 
 # Garantir diretório de backups
 mkdir -p "$BACKUP_DIR"
 
-echo "Iniciando backup completo do cluster PostgreSQL (incluindo Roles e Privilégios)..."
+echo "Iniciando backup completo do cluster PostgreSQL (incluindo Roles, Privilégios e limpeza)..."
 
-# 1. Executa o pg_dumpall e comprime para gzip dentro do container (evita corrupção por redirection do host Windows)
-docker exec -t ${CONTAINER_NAME} sh -c "pg_dumpall -U ${DB_USER} | gzip > /tmp/backup_cluster.sql.gz"
+# 1. Executa o pg_dumpall com -c (clean) e comprime para gzip dentro do container (evita corrupção por redirection do host Windows)
+docker exec -t ${CONTAINER_NAME} sh -c "pg_dumpall -c -U ${DB_USER} | gzip > /tmp/backup_total.sql.gz"
 
 # 2. Copia o arquivo comprimido íntegro do container para a máquina host
-docker cp "${CONTAINER_NAME}:/tmp/backup_cluster.sql.gz" "${BACKUP_FILE}"
+docker cp "${CONTAINER_NAME}:/tmp/backup_total.sql.gz" "${BACKUP_FILE}"
 
 # 3. Limpa o arquivo temporário no container
-docker exec -t ${CONTAINER_NAME} rm /tmp/backup_cluster.sql.gz
+docker exec -t ${CONTAINER_NAME} rm /tmp/backup_total.sql.gz
 
 if [ $? -eq 0 ] && [ -f "${BACKUP_FILE}" ]; then
     echo -e "${GREEN}===================================================${NC}"
